@@ -34,7 +34,7 @@ class BsnPalm < Formula
     libexec.install "bsn-palm-installer-#{version}.sh" => "install.sh"
     (bin/"bsn-palm").write <<~EOS
       #!/bin/bash
-      export PATH="#{Formula["node@22"].opt_bin}:$PATH"
+      export PATH="#{formula_opt_bin("node@22")}:$PATH"
       export BSN_PALM_DIST_BASE="${BSN_PALM_DIST_BASE:-https://getpalm.bsnsolution.com.br}"
       DIR="${BSN_PALM_DIR:-$HOME/bsn-palm}"
       if [ -f "$DIR/dist/setup/cli.js" ] && [ "${1:-}" != "update" ]; then
@@ -56,7 +56,7 @@ class BsnPalm < Formula
   end
 
   test do
-    assert_predicate libexec/"install.sh", :exist?
+    assert_path_exists libexec/"install.sh"
     system "bash", "-n", libexec/"install.sh"
   end
 end
