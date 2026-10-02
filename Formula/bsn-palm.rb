@@ -14,15 +14,15 @@
 # O instalador fica no proprio tap (installers/), que e publico: e o mesmo install.sh
 # publico do getpalm -- nenhum codigo do Palm vai para o repositorio do tap.
 #
-# 0.3.1-ebb3ea6, 8951842b9d81dd19585623c17e98f48d44724c2eab893f272c6b54e7b6f0aaba, https://getpalm.bsnsolution.com.br e https://raw.githubusercontent.com/BSNSolution/homebrew-tap/main/installers/bsn-palm-installer-0.3.1-ebb3ea6.sh sao preenchidos por
+# @VERSION@, @SHA256@, @DIST_BASE@ e @INSTALLER_URL@ sao preenchidos por
 # ops/distribution/make-release.sh (saida em dist-release/homebrew/bsn-palm.rb).
 # E formula (nao cask) porque o Bsn Palm e um programa de linha de comando.
 class BsnPalm < Formula
   desc "Agente pessoal de IA no WhatsApp e num painel web"
   homepage "https://getpalm.bsnsolution.com.br"
-  url "https://raw.githubusercontent.com/BSNSolution/homebrew-tap/main/installers/bsn-palm-installer-0.3.1-ebb3ea6.sh"
-  version "0.3.1-ebb3ea6"
-  sha256 "8951842b9d81dd19585623c17e98f48d44724c2eab893f272c6b54e7b6f0aaba"
+  url "https://raw.githubusercontent.com/BSNSolution/homebrew-tap/main/installers/bsn-palm-installer-0.4.3-866c770.sh"
+  version "0.4.3-866c770"
+  sha256 "20723715400c6fdde643dc712417ed58455f0766d2035e6d972d96cf6b313a3a"
   license :cannot_represent
 
   depends_on "ffmpeg"

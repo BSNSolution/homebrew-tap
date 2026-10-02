@@ -7,7 +7,10 @@
 # Garante Node 22, git e compiladores, troca a sua LICENCA por um link de
 # download temporario, baixa o pacote (conferindo o sha256), instala o comando
 # `bsn-palm` e chama o setup interativo (`bsn-palm setup`), que sobe o resto:
-# Claude Code, WhatsApp (WAHA), Firecrawl, Whisper, HTTPS, servico...
+# WhatsApp (WAHA), Firecrawl, Whisper, HTTPS, servico... O motor de IA e o da
+# pessoa (Claude Code/Codex opcionais, ou a chave de API de qualquer provedor,
+# cadastrada no painel). Nada aponta para servidores da BSN alem deste getpalm
+# (licenca e download); servicos da BSN (ex.: BSN Voz) sao opcionais, no painel.
 # Pode rodar de novo quantas vezes quiser: so mexe no que falta.
 # Tambem funciona sem terminal (CI, ssh sem -t): o setup usa as respostas padrao.
 set -euo pipefail
@@ -30,7 +33,8 @@ BRANCH="${BSN_PALM_BRANCH:-}"          # vazio = branch padrao do repositorio
 VERSION="${BSN_PALM_VERSION:-latest}"  # release: versao fixa ou latest
 NODE_MAJOR=22
 
-# --license=X / --license X: fica aqui e tambem segue para o setup (que guarda).
+# --license=X / --license X: fica aqui e segue para o setup (que guarda) pela variavel
+# BSN_PALM_LICENSE, nunca na linha de comando (o ps mostra os argumentos a qualquer usuario).
 SETUP_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -72,17 +76,24 @@ if [ "$OS" = "Darwin" ]; then
     export PATH="$NODE_PREFIX/bin:$PATH"
   fi
 elif [ "$OS" = "Linux" ]; then
+  # bubblewrap (bwrap): os motores CLI (Codex, OpenCode, Cursor...) so rodam isolados do sistema neste
+  # pacote -- disco so leitura, segredos ocultos. Sem ele, ficam desligados (o Claude e o Palm Lite seguem).
   if command -v apt-get >/dev/null 2>&1; then
     $SUDO env DEBIAN_FRONTEND=noninteractive apt-get update -y
     $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates python3 make g++ tar gzip
+    $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y bubblewrap || warn "Nao consegui instalar o bubblewrap: os motores CLI ficam desligados."
   elif command -v dnf >/dev/null 2>&1; then
     $SUDO dnf install -y git curl python3 make gcc-c++ tar gzip
+    $SUDO dnf install -y bubblewrap || warn "Nao consegui instalar o bubblewrap: os motores CLI ficam desligados."
   elif command -v yum >/dev/null 2>&1; then
     $SUDO yum install -y git curl python3 make gcc-c++ tar gzip
+    $SUDO yum install -y bubblewrap || warn "Nao consegui instalar o bubblewrap: os motores CLI ficam desligados."
   elif command -v apk >/dev/null 2>&1; then
     $SUDO apk add git curl bash python3 make g++ tar gzip
+    $SUDO apk add bubblewrap || warn "Nao consegui instalar o bubblewrap: os motores CLI ficam desligados."
   elif command -v pacman >/dev/null 2>&1; then
     $SUDO pacman -S --noconfirm --needed git curl python make gcc tar gzip
+    $SUDO pacman -S --noconfirm --needed bubblewrap || warn "Nao consegui instalar o bubblewrap: os motores CLI ficam desligados."
   fi
   if ! node_ok; then
     say "Instalando o Node.js $NODE_MAJOR..."
@@ -163,18 +174,19 @@ resolve_download() {
     return
   fi
   resolve_license
-  # TODO licenca (ver AI/PLANS/23_09_2026-23_30_LICENCIAMENTO_DISTRIBUICAO_SUPERADMIN.md):
-  # contrato proposto do getpalm -- POST $DIST_BASE/api/v1/download
+  # getpalm -- POST $DIST_BASE/api/v1/download
   #   pede:     {"license","version","os","arch","installId"}
-  #   devolve:  200 {"url": "<link temporario, vence em minutos>", "sha256", "version"}
+  #   devolve:  200 {"url": "<link temporario, vence em minutos>", "sha256", "version", "signature"}
   #             401/403 {"error": "licenca invalida | desativada | expirada"}
   local os arch install_id resp
   os="$(uname -s | tr '[:upper:]' '[:lower:]')"
   arch="$(uname -m)"
   install_id="$( [ -f "$STATE/ops/bsn-palm.env" ] && sed -n 's/^PALM_INSTALL_ID=//p' "$STATE/ops/bsn-palm.env" | tail -1 || true)"
-  resp="$(curl -sS --retry 2 -w '\n%{http_code}' -X POST "$DIST_BASE/api/v1/download" \
-    -H 'Content-Type: application/json' \
-    -d "$(node -e 'console.log(JSON.stringify({license:process.argv[1],version:process.argv[2],os:process.argv[3],arch:process.argv[4],installId:process.argv[5]||undefined}))' "$LICENSE" "$VERSION" "$os" "$arch" "$install_id")" 2>/dev/null)" \
+  # O corpo (com a licenca) vai pelo stdin do curl e o node le a licenca do ambiente: nada dela
+  # nos argumentos do node nem do curl.
+  resp="$(BSN_PALM_LICENSE="$LICENSE" node -e 'console.log(JSON.stringify({license:process.env.BSN_PALM_LICENSE,version:process.argv[1],os:process.argv[2],arch:process.argv[3],installId:process.argv[4]||undefined}))' "$VERSION" "$os" "$arch" "$install_id" \
+    | curl -sS --retry 2 -w '\n%{http_code}' -X POST "$DIST_BASE/api/v1/download" \
+      -H 'Content-Type: application/json' --data-binary @- 2>/dev/null)" \
     || die "Nao consegui falar com $DIST_BASE. Confira a internet e tente de novo."
   local code="${resp##*$'\n'}" body="${resp%$'\n'*}"
   case "$code" in
@@ -254,7 +266,15 @@ else
   resolve_download
   install_package
 fi
-[ -n "$LICENSE" ] && SETUP_ARGS+=("--license=$LICENSE")
+# Licenca para o setup: pela variavel (fora do ps). O setup le BSN_PALM_LICENSE desde a 0.4.2;
+# pacote mais velho (ex.: BSN_PALM_VERSION fixa numa versao antiga) recebe o --license= de antes.
+setup_reads_license_env() {
+  node -e 'const v=String(require(process.argv[1]).version||"0").split(/[.-]/).map(Number);process.exit((v[0]||0)*1e6+(v[1]||0)*1e3+(v[2]||0)>=4002?0:1)' "$DIR/package.json" 2>/dev/null
+}
+if [ -n "$LICENSE" ]; then
+  export BSN_PALM_LICENSE="$LICENSE"
+  setup_reads_license_env || SETUP_ARGS+=("--license=$LICENSE")
+fi
 
 # ------------------------------------------------- comando bsn-palm no PATH --
 NODE_BIN="$(command -v node)"
